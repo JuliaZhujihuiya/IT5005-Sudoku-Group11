@@ -195,9 +195,38 @@ def pl_bc_entails(kb, query):
     -------
     bool
     """
-    raise NotImplementedError(
-        'pl_bc_entails: implement backward chaining, soundly'
-    )
+    def prove(q,visiting):
+        #if q matches a fact,return ture
+        if q in kb.clauses and is_prop_symbol(q.op):
+            return True
+        if q in visiting:
+            return False
+        new_visiting=visiting|{q}
+        #if no clauses with a consequent matches q,return false
+        rules=[]
+        for c in kb.clauses:
+            if c.op=='==>' and c.args[1]==q:
+                rules.append(c)
+        if not rules:
+            return False
+        #for each clause c in KB where p is in c.conclusion
+        for c in rules:
+            premise=conjuncts(c.args[0])
+            count=len(premise)
+            #for all symbols p in c.premise
+            for p in premise:
+                if prove(p,new_visiting): 
+                    if p not in kb.clauses:
+                        kb.tell(p)
+                    count-=1
+                else:
+                    break
+            if count==0:
+                return True
+        return False
+    
+    return prove(query,set())
+            
 
 
 def solve_full_grid_bc(n, box_h, box_w, givens):
@@ -211,6 +240,15 @@ def solve_full_grid_bc(n, box_h, box_w, givens):
     -------
     dict[(int, int), int] -- {(row, col): value} for every cell
     """
-    raise NotImplementedError(
-        'solve_full_grid_bc: solve every cell with backward chaining'
-    )
+    kb = build_definite_kb(n, box_h, box_w, givens)
+    solved = {}
+
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            for v in range(1, n + 1):
+                query = atom('Is', r, c, v)
+                if pl_bc_entails(kb, query):
+                    solved[(r, c)] = v
+                    break
+
+    return solved
