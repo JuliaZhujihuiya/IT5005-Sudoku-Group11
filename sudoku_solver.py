@@ -214,7 +214,14 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
 
 
 def pl_bc_entails(kb, query):
-    """Your own backward-chaining implementation.
+    """Return whether ``query`` follows from a definite-clause KB.
+
+    The search is goal-directed: beginning at ``query``, it follows only rules
+    that could conclude the current goal and records their premise goals.  The
+    resulting dependency table lets cyclic rules be resolved without unbounded
+    recursive re-expansion.  Indexes and completed answers are cached on the
+    supplied KB, so full-grid solving can reuse them without changing
+    ``kb.clauses``.
 
     Parameters
     ----------
@@ -225,37 +232,84 @@ def pl_bc_entails(kb, query):
     -------
     bool
     """
-    def prove(q,visiting):
-        #if q matches a fact,return ture
-        if q in kb.clauses and is_prop_symbol(q.op):
-            return True
-        if q in visiting:
-            return False
-        new_visiting=visiting|{q}
-        #if no clauses with a consequent matches q,return false
-        rules=[]
-        for c in kb.clauses:
-            if c.op=='==>' and c.args[1]==q:
-                rules.append(c)
-        if not rules:
-            return False
-        #for each clause c in KB where p is in c.conclusion
-        for c in rules:
-            premise=conjuncts(c.args[0])
-            count=len(premise)
-            #for all symbols p in c.premise
-            for p in premise:
-                if prove(p,new_visiting): 
-                    if p not in kb.clauses:
-                        kb.tell(p)
-                    count-=1
-                else:
-                    break
-            if count==0:
-                return True
+    if not hasattr(kb, '_bc_rules_by_conclusion'):
+        facts = set()
+        rules_by_conclusion = {}
+
+        for clause in kb.clauses:
+            if is_prop_symbol(clause.op):
+                facts.add(clause)
+            elif clause.op == '==>':
+                conclusion = clause.args[1]
+                premises = tuple(conjuncts(clause.args[0]))
+                rules_by_conclusion.setdefault(conclusion, []).append(premises)
+
+        kb._bc_rules_by_conclusion = rules_by_conclusion
+        kb._bc_true = facts
+        kb._bc_false = set()
+
+    rules_by_conclusion = kb._bc_rules_by_conclusion
+    if query in kb._bc_true:
+        return True
+    if query in kb._bc_false:
         return False
-    
-    return prove(query,set())
+
+    # Expand the AND/OR proof graph backwards from the query.  An explicit
+    # stack represents recursive goal expansion, avoiding Python recursion
+    # limits for the densely connected Sudoku rule graph.
+    relevant_goals = set()
+    relevant_rules = []
+    goals_to_expand = [query]
+
+    while goals_to_expand:
+        goal = goals_to_expand.pop()
+        if goal in relevant_goals:
+            continue
+
+        relevant_goals.add(goal)
+        for premises in rules_by_conclusion.get(goal, []):
+            relevant_rules.append((premises, goal))
+            for premise in premises:
+                if premise not in relevant_goals:
+                    goals_to_expand.append(premise)
+
+    # Resolve the selected proof graph by repeatedly firing a rule once all
+    # of its premises are proved.  This is tabled backward chaining: it only
+    # considers goals relevant to the original query, but handles cycles by
+    # sharing the table rather than recursively revisiting active goals.
+    proved = relevant_goals & kb._bc_true
+    agenda = list(proved)
+    remaining_premises = []
+    rules_waiting_for = {}
+
+    for index, (premises, conclusion) in enumerate(relevant_rules):
+        missing = [premise for premise in premises if premise not in proved]
+        remaining_premises.append(len(missing))
+
+        if not missing:
+            if conclusion not in proved:
+                proved.add(conclusion)
+                agenda.append(conclusion)
+        else:
+            for premise in missing:
+                rules_waiting_for.setdefault(premise, []).append(index)
+
+    while agenda:
+        premise = agenda.pop()
+        for rule_index in rules_waiting_for.get(premise, []):
+            remaining_premises[rule_index] -= 1
+            if remaining_premises[rule_index] == 0:
+                conclusion = relevant_rules[rule_index][1]
+                if conclusion not in proved:
+                    proved.add(conclusion)
+                    agenda.append(conclusion)
+
+    # Every possible proof path for a relevant goal was included above.  With
+    # an unchanged Horn KB, an unresolved relevant goal cannot become true in
+    # a later query, so both successful and failed answers are safe to cache.
+    kb._bc_true.update(proved)
+    kb._bc_false.update(relevant_goals - proved)
+    return query in proved
             
 
 
@@ -271,14 +325,23 @@ def solve_full_grid_bc(n, box_h, box_w, givens):
     dict[(int, int), int] -- {(row, col): value} for every cell
     """
     kb = build_definite_kb(n, box_h, box_w, givens)
-    solved = {}
+    # Each given is a unit fact, hence already entailed without a search.
+    solved = dict(givens)
 
     for r in range(1, n + 1):
         for c in range(1, n + 1):
+            if (r, c) in solved:
+                continue
+
             for v in range(1, n + 1):
                 query = atom('Is', r, c, v)
                 if pl_bc_entails(kb, query):
                     solved[(r, c)] = v
                     break
+
+            if (r, c) not in solved:
+                raise ValueError(
+                    f'Backward chaining could not determine cell ({r}, {c}).'
+                )
 
     return solved
