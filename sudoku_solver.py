@@ -28,46 +28,46 @@ def build_general_kb(n, box_h, box_w, givens):
     """
     kb = PropKB()
 
-    # 保证每一个格子恰好有一个数字
+    # Ensure that every cell contains exactly one value.
     for r in range(1, n + 1):
         for c in range(1, n + 1):
             candidates = [atom('Is', r, c, v) for v in range(1, n + 1)]
-            kb.tell(associate('|', candidates)) # 保证每个格子至少一个数字
+            kb.tell(associate('|', candidates)) # Ensure at least one value per cell.
             for v in range(1, n + 1): 
                 for w in range(v + 1, n + 1):
-                    kb.tell(~atom('Is', r, c, v) | ~atom('Is', r, c, w)) # 保证每个格子至多一个数字
+                    kb.tell(~atom('Is', r, c, v) | ~atom('Is', r, c, w)) # Ensure at most one value per cell.
 
-    # 保证同一行没有重复数字
+    # Ensure that no value is repeated within a row.
     for r in range(1, n + 1):
         for v in range(1, n + 1):
             for c1 in range(1, n + 1):
                 for c2 in range(c1 + 1, n + 1):
                     kb.tell(~atom('Is', r, c1, v) | ~atom('Is', r, c2, v))
 
-    # 保证同一列没有重复数字
+    # Ensure that no value is repeated within a column.
     for c in range(1, n + 1):
         for v in range(1, n + 1):
             for r1 in range(1, n + 1):
                 for r2 in range(r1 + 1, n + 1):
                     kb.tell(~atom('Is', r1, c, v) | ~atom('Is', r2, c, v))
 
-    # 保证同一宫没有重复数字
+    # Ensure that no value is repeated within a box.
     for r0 in range(1, n + 1, box_h):
         for c0 in range(1, n + 1, box_w):
-            # 收集当前宫的全部格子
+            # Collect all cells in the current box.
             cells = []
             for r in range(r0, r0 + box_h):
                 for c in range(c0, c0 + box_w):
                     cells.append((r, c))
 
-            # 每一宫收集完毕，再配对
+            # Generate cell pairs after collecting the complete box.
             for i in range(len(cells)):
                 for j in range(i + 1, len(cells)):
                     r1, c1 = cells[i]
                     r2, c2 = cells[j]
                     for v in range(1, n + 1):
                         kb.tell(~atom('Is', r1, c1, v) | ~atom('Is', r2, c2, v))
-    # 加入已经填入数字的atom
+    # Add the given values as atomic facts.
     for (r, c), v in givens.items():
         kb.tell(atom('Is', r, c, v))
 
@@ -88,7 +88,7 @@ def build_definite_kb(n, box_h, box_w, givens):
     """
     kb = PropDefiniteKB()
 
-    # 基本规则，对于同一个格子，如果取v，那么就不能是除v外所有的数
+    # If a cell contains v, eliminate every other value from that cell.
     for r in range(1, n + 1):
         for c in range(1, n + 1):
             for v in range(1, n + 1):
@@ -99,7 +99,7 @@ def build_definite_kb(n, box_h, box_w, givens):
                             | '==>' |
                             atom('Not', r, c, w)
                         )
-    # 对于同一行，去过已经有v，那么这一行其他格子就不能再有v
+    # If a row already contains v, eliminate v from every other cell in that row.
     for r in range(1, n + 1):
         for v in range(1, n + 1):
             for c1 in range(1, n + 1):
@@ -110,7 +110,7 @@ def build_definite_kb(n, box_h, box_w, givens):
                             | '==>' |
                             atom('Not', r, c2, v)
                         )
-    # 对于同一列，去过已经有v，那么这一列其他格子就不能再有v
+    # If a column already contains v, eliminate v from every other cell in that column.
     for c in range(1, n + 1):
         for v in range(1, n + 1):
             for r1 in range(1, n + 1):
@@ -121,10 +121,10 @@ def build_definite_kb(n, box_h, box_w, givens):
                             | '==>' |
                             atom('Not', r2, c, v)
                         )
-    # 对于同一宫，宫内有一个格子是v，则宫内其他格子不能再是v
+    # If a box already contains v, eliminate v from every other cell in that box.
     for r0 in range(1, n + 1, box_h):
         for c0 in range(1, n + 1, box_w):
-        # 收集当前宫的全部格子
+        # Collect all cells in the current box.
             cells = []
             for r in range(r0, r0 + box_h):
                 for c in range(c0, c0 + box_w):
@@ -142,7 +142,7 @@ def build_definite_kb(n, box_h, box_w, givens):
                             | '==>' |
                             atom('Not', r2, c2, v)
                             )
-    # 通过规则确定某格数字
+    # Infer a cell's value after all other candidates have been eliminated.
     for r in range(1, n + 1):
         for c in range(1, n + 1):
             for v in range(1, n + 1):
@@ -156,7 +156,7 @@ def build_definite_kb(n, box_h, box_w, givens):
                     | '==>' |
                     atom('Is', r, c, v)
                 )
-    # 将已知的格子放入知识库
+    # Add the given values to the knowledge base.
     for (r, c), v in givens.items():
         kb.tell(atom('Is', r, c, v))
 
