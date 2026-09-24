@@ -1,7 +1,7 @@
-"""Learning step 4: explain a query with recorded inference rules.
+"""Interactive Streamlit application for the IT5005 Sudoku assignment.
 
-This is a learning checkpoint, not the finished assignment application.
-Run: python -m streamlit run sudoku_app.py
+The app supports puzzle selection, full-grid solving with forward or backward
+chaining, targeted entailment queries, and human-readable reasoning traces.
 """
 
 import json
